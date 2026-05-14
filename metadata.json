@@ -1,0 +1,6 @@
+{
+  "name": "Generador de Exámenes IE Bajo Grande",
+  "description": "Aplicación para docentes de la IE Bajo Grande para generar y gestionar evaluaciones académicas inteligentes basadas en el PEI institucional.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
