@@ -4,8 +4,14 @@
  */
 import { GoogleGenAI } from "@google/genai";
 
-// Use the system-injected GEMINI_API_KEY
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+// Use the system-injected VITE_GEMINI_API_KEY
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
+if (!apiKey) {
+  console.error("Gemini API key missing. Ensure VITE_GEMINI_API_KEY is set in your environment.");
+}
+
+const ai = new GoogleGenAI({ apiKey: apiKey || "" });
 
 export async function generateExam(
   subject: string,
