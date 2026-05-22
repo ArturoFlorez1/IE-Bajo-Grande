@@ -7,24 +7,34 @@ export default function AcademicGuide() {
 
   const sections = [
     {
-      title: "Metodología de Generación",
+      title: "Metodología de Vanguardia",
       icon: <Sparkles className="text-indigo-600" size={20} />,
-      content: "Nuestra IA no solo redacta preguntas; actúa como un experto en diseño curricular. Se basa en las matrices de referencia del ICFES y los Derechos Básicos de Aprendizaje (DBA) colombianos para asegurar validez pedagógica."
+      content: "Nuestra IA actúa como un consultor curricular de élite, alineando cada reactivo con las matrices del ICFES y los Derechos Básicos de Aprendizaje (DBA) para garantizar rigor institucional."
+    },
+    {
+      title: "Taxonomía de Bloom",
+      icon: <Target className="text-rose-600" size={20} />,
+      content: "Permite graduar la complejidad cognitiva: desde 'Recordar' datos hasta 'Crear' nuevas síntesis. Esto asegura que la evaluación no sea solo memorística, sino que fomente el pensamiento superior."
+    },
+    {
+      title: "Talleres de Refuerzo",
+      icon: <BookOpen className="text-emerald-600" size={20} />,
+      content: "A diferencia de la evaluación sumativa, el modo 'Taller' incluye una Fundamentación Teórica previa, ideal para procesos de nivelación, refuerzo escolar o guías de autoestudio."
     },
     {
       title: "Pensamiento Crítico",
-      icon: <Target className="text-emerald-600" size={20} />,
+      icon: <Target className="text-indigo-600" size={20} />,
       content: "Buscamos evaluar la inferencia y la argumentación. Cada reactivo incluye un 'Texto Base' o estímulo para que el estudiante aplique conocimiento en situaciones reales."
     },
     {
-      title: "Malla y Estándares",
-      icon: <BookOpen className="text-indigo-600" size={20} />,
-      content: "Integración automática con estándares MEN. Cobertura total para Básica Secundaria y Media en todas las dimensiones del conocimiento."
+      title: "Material de Referencia",
+      icon: <Sparkles className="text-amber-600" size={20} />,
+      content: "La extracción inteligente de PDF prioriza la malla curricular propia del docente, permitiendo que la IA genere contenido basado en la realidad específica del aula y no solo en bases generales."
     },
     {
-      title: "Optimización del Resultado",
-      icon: <Info className="text-amber-600" size={20} />,
-      content: "Proporcione temas específicos en lugar de generales. La IA detectará automáticamente si ha subido un PDF para priorizar ese material como fuente de verdad."
+      title: "Diseño Basado en Evidencias",
+      icon: <Info className="text-slate-600" size={20} />,
+      content: "Cada pregunta incluye su explicación pedagógica y alineación temática, facilitando al docente la retroalimentación inmediata y el seguimiento por competencias."
     }
   ];
 
