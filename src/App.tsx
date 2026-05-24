@@ -2,11 +2,12 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-import { useState, ChangeEvent } from 'react';
-import { Trash, Edit, Download, X, GraduationCap, ChevronLeft, Calendar, User, FileText, BarChart, Info, BookOpen, FileUp, Sparkles, Settings2, Target, Layers } from 'lucide-react';
+import { useState, ChangeEvent, useEffect } from 'react';
+import { Trash, Edit, Download, X, GraduationCap, ChevronLeft, Calendar, User, FileText, BarChart, Info, BookOpen, FileUp, Sparkles, Settings2, Target, Layers, History, Copy, Check, Clock } from 'lucide-react';
 import jsPDF from 'jspdf';
 import * as pdfjs from 'pdfjs-dist';
 import { motion, AnimatePresence } from 'motion/react';
+import Markdown from 'react-markdown';
 import AcademicGuide from './components/AcademicGuide';
 
 // Client-side API wrappers
@@ -38,6 +39,15 @@ const pdfWorkerUrl = new URL(
 ).toString();
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
+const shuffleArray = (array: any[]) => {
+  const newArr = [...array];
+  for (let i = newArr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [newArr[i], newArr[j]] = [newArr[j], newArr[i]];
+  }
+  return newArr;
+};
+
 const SUBJECTS = [
   "Ciencias Naturales y Educación Ambiental",
   "C. Sociales, Hist. Geo. Const. y Demo",
@@ -65,9 +75,11 @@ export default function App() {
     numQuestions: 5,
     taxonomyBloom: 'Crear',
     generationMode: 'evaluacion' as 'evaluacion' | 'taller',
-    questionType: 'mixed' as 'multiple-choice' | 'open' | 'mixed',
+    numMultipleChoice: 5,
+    numOpenEnded: 0,
+    attemptedSubmit: false,
     examGenerated: false,
-    examData: { examTitle: '', theoreticalSummary: '', questions: [] as any[] },
+    examData: { examTitle: '', theoreticalSummary: '', globalRubric: '', dbaCoveragePercentage: 0, dbaCoverageExplanation: '', estimatedTimeMinutes: 0, questions: [] as any[] },
     loading: false,
     error: null as string | null
   });
@@ -79,6 +91,33 @@ export default function App() {
   const [editingQuestion, setEditingQuestion] = useState<any>(null);
   const [editInstruction, setEditInstruction] = useState('');
   const [isEditing, setIsEditing] = useState(false);
+  
+  const [savedExams, setSavedExams] = useState<any[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    const loaded = localStorage.getItem('school_exam_history');
+    if (loaded) {
+      try {
+        setSavedExams(JSON.parse(loaded));
+      } catch (e) {
+        console.error("Failed to load history", e);
+      }
+    }
+  }, []);
+
+  const saveToHistory = (examData: any, config: any) => {
+    const newEntry = {
+      id: Date.now().toString(),
+      date: new Date().toISOString(),
+      config,
+      examData
+    };
+    const updated = [newEntry, ...savedExams].slice(0, 50); // Keep last 50
+    setSavedExams(updated);
+    localStorage.setItem('school_exam_history', JSON.stringify(updated));
+  };
 
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -114,8 +153,13 @@ export default function App() {
   };
 
   const handleGenerate = async () => {
+    setExamState(prev => ({ ...prev, attemptedSubmit: true }));
     if (!examState.subject || !examState.topic || !examState.grade || !examState.teacherName || !examState.period) {
       setExamState(prev => ({ ...prev, error: 'Por favor complete todos los campos obligatorios.' }));
+      return;
+    }
+    if ((examState.numMultipleChoice + examState.numOpenEnded) !== examState.numQuestions) {
+      setExamState(prev => ({ ...prev, error: 'La suma de las preguntas de selección múltiple y abiertas debe ser igual al Total de Preguntas.' }));
       return;
     }
     setExamState(prev => ({ ...prev, loading: true, error: null }));
@@ -125,6 +169,7 @@ export default function App() {
         sourceMaterial: pdfText
       });
       setExamState(prev => ({ ...prev, loading: false, examGenerated: true, examData: data }));
+      saveToHistory(data, examState);
     } catch (error: any) {
       console.error(error);
       let errorMsg = 'Hubo un error al generar el examen. Por favor, intenta de nuevo.';
@@ -170,7 +215,7 @@ export default function App() {
     }));
   };
 
-  const downloadPDF = (includeAnswers: boolean) => {
+  const downloadPDF = (includeAnswers: boolean, version: 'A' | 'B' = 'A') => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const marginLeft = 20;
@@ -200,12 +245,15 @@ export default function App() {
     };
 
     const isWorkshop = examState.generationMode === 'taller';
+    let baseTitle = examState.examData.examTitle || (isWorkshop ? 'Guía de Refuerzo Pedagógico' : 'Evaluación Académica');
+    if (version === 'B') baseTitle += ' - Versión B';
+    else baseTitle += ' - Versión A';
     
     // Header Academic Look
     doc.setFillColor(30, 58, 138); // blue-900
     doc.rect(0, 0, pageWidth, 40, 'F');
     
-    addText(examState.examData.examTitle || (isWorkshop ? 'Guía de Refuerzo Pedagógico' : 'Evaluación Académica'), 18, 'bold', 'white', 'center'); y = 45;
+    addText(baseTitle, 18, 'bold', 'white', 'center'); y = 45;
     
     addText(`Institución Educativa: IE Bajo Grande`, 12, 'bold', '#1e3a8a');
     addText(`Docente: ${examState.teacherName}`, 11, 'normal');
@@ -231,7 +279,29 @@ export default function App() {
       y += 5;
     }
 
-    examState.examData.questions.forEach((q: any, idx: number) => {
+    let questionsToPrint = [...examState.examData.questions];
+    if (version === 'B') {
+      questionsToPrint = shuffleArray(questionsToPrint).map(q => {
+        if (q.opciones && Object.keys(q.opciones).length > 0) {
+           const opts = Object.entries(q.opciones);
+           const correctValue = q.opciones[q.respuesta_correcta as keyof typeof q.opciones];
+           const shuffledVals = shuffleArray(opts.map(o => o[1]));
+           const keys = ['A', 'B', 'C', 'D'].slice(0, shuffledVals.length);
+           const newOpciones: Record<string, string> = {};
+           let newCorrect = q.respuesta_correcta;
+           keys.forEach((k, i) => {
+             newOpciones[k] = shuffledVals[i] as string;
+             if (shuffledVals[i] === correctValue) {
+               newCorrect = k;
+             }
+           });
+           return { ...q, opciones: newOpciones, respuesta_correcta: newCorrect };
+        }
+        return q;
+      });
+    }
+
+    questionsToPrint.forEach((q: any, idx: number) => {
       if (y > 250) { doc.addPage(); y = 20; }
       
       addText(`${idx + 1}. ${q.pregunta}`, 12, 'bold');
@@ -258,7 +328,39 @@ export default function App() {
       y += 8;
     });
     
-    doc.save(`Examen_${examState.subject.replace(/ /g, '_')}_${includeAnswers ? 'docente' : 'estudiante'}.pdf`);
+    
+    doc.save(`Examen_${examState.subject.replace(/ /g, '_')}_${version}_${includeAnswers ? 'docente' : 'estudiante'}.pdf`);
+  };
+
+  const copyToClipboard = () => {
+    if (!examState.examData.questions) return;
+    
+    const isWorkshop = examState.generationMode === 'taller';
+    let textOut = `${examState.examData.examTitle || (isWorkshop ? 'Guía de Refuerzo' : 'Evaluación')}\n`;
+    textOut += `Docente: ${examState.teacherName} | Asignatura: ${examState.subject}\n`;
+    textOut += `Tema: ${examState.topic} | Grado: ${examState.grade} | Periodo: ${examState.period}\n`;
+    textOut += `Tiempo Estimado: ${examState.examData.estimatedTimeMinutes || '--'} min\n\n`;
+
+    if (isWorkshop && examState.examData.theoreticalSummary) {
+      textOut += `FUNDAMENTACIÓN TEÓRICA\n${examState.examData.theoreticalSummary}\n\n`;
+    }
+
+    textOut += `PREGUNTAS\n\n`;
+
+    examState.examData.questions.forEach((q: any, idx: number) => {
+      textOut += `${idx + 1}. ${q.pregunta}\n`;
+      if (q.texto_base) textOut += `[Contexto]: ${q.texto_base}\n`;
+      if (q.opciones) {
+        Object.entries(q.opciones).forEach(([k, v]) => {
+          textOut += `   ${k}) ${v}\n`;
+        });
+      }
+      textOut += `\n`;
+    });
+
+    navigator.clipboard.writeText(textOut);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -283,6 +385,12 @@ export default function App() {
             Vanguardia Educativa & IA
           </p>
           <span className="h-px w-16 bg-slate-200"></span>
+        </div>
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 cursor-pointer group" onClick={() => setShowHistory(true)}>
+          <div className="bg-white px-5 py-3 rounded-full shadow-lg shadow-indigo-100 border border-slate-100 flex items-center gap-3 hover:border-indigo-300 hover:shadow-indigo-200 transition-all">
+            <History size={20} className="text-indigo-500 group-hover:-rotate-45 transition-transform" />
+            <span className="text-xs font-black uppercase text-slate-600 tracking-wider">Historial ({savedExams.length})</span>
+          </div>
         </div>
       </header>
 
@@ -329,16 +437,16 @@ export default function App() {
                       </div>
 
                       <div className="group">
-                        <label className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400 mb-2 block pl-1">Docente Responsable</label>
+                        <label className={`text-[11px] font-bold uppercase tracking-[0.2em] mb-2 block pl-1 ${examState.attemptedSubmit && !examState.teacherName ? 'text-rose-500' : 'text-slate-400'}`}>Docente Responsable (Requerido)</label>
                         <div className="relative group-focus-within:scale-[1.01] transition-transform">
                           <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={20} />
-                          <input type="text" className="w-full rounded-2xl border border-slate-200 p-4 pl-12 bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-300 transition-all outline-none font-medium" value={examState.teacherName} placeholder="Nombre completo" onChange={(e) => setExamState({ ...examState, teacherName: e.target.value })} />
+                          <input type="text" className={`w-full rounded-2xl border p-4 pl-12 transition-all outline-none font-medium ${examState.attemptedSubmit && !examState.teacherName ? 'border-rose-300 bg-rose-50 focus:border-rose-500 ring-4 ring-rose-100 placeholder:text-rose-300' : 'border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-300'}`} value={examState.teacherName} placeholder="Nombre completo" onChange={(e) => setExamState({ ...examState, teacherName: e.target.value })} />
                         </div>
                       </div>
 
                       <div className="group">
-                        <label className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400 mb-2 block pl-1">Asignatura</label>
-                        <select className="w-full rounded-2xl border border-slate-200 p-4 bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-300 transition-all outline-none font-medium appearance-none cursor-pointer" value={examState.subject} onChange={(e) => setExamState({ ...examState, subject: e.target.value })}>
+                        <label className={`text-[11px] font-bold uppercase tracking-[0.2em] mb-2 block pl-1 ${examState.attemptedSubmit && !examState.subject ? 'text-rose-500' : 'text-slate-400'}`}>Asignatura (Requerido)</label>
+                        <select className={`w-full rounded-2xl border p-4 transition-all outline-none font-medium appearance-none cursor-pointer ${examState.attemptedSubmit && !examState.subject ? 'border-rose-300 bg-rose-50 focus:border-rose-500 ring-4 ring-rose-100 text-rose-700' : 'border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-300'}`} value={examState.subject} onChange={(e) => setExamState({ ...examState, subject: e.target.value })}>
                           <option value="">Seleccione asignatura...</option>
                           {SUBJECTS.map((s) => <option key={s} value={s}>{s}</option>)}
                         </select>
@@ -346,15 +454,15 @@ export default function App() {
 
                       <div className="grid grid-cols-2 gap-4">
                         <div className="group">
-                          <label className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400 mb-2 block pl-1">Grado</label>
-                          <select className="w-full rounded-2xl border border-slate-200 p-4 bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-300 transition-all outline-none font-medium appearance-none cursor-pointer" value={examState.grade} onChange={(e) => setExamState({ ...examState, grade: e.target.value })}>
+                          <label className={`text-[11px] font-bold uppercase tracking-[0.2em] mb-2 block pl-1 ${examState.attemptedSubmit && !examState.grade ? 'text-rose-500' : 'text-slate-400'}`}>Grado (Requerido)</label>
+                          <select className={`w-full rounded-2xl border p-4 transition-all outline-none font-medium appearance-none cursor-pointer ${examState.attemptedSubmit && !examState.grade ? 'border-rose-300 bg-rose-50 focus:border-rose-500 ring-4 ring-rose-100 text-rose-700' : 'border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-300'}`} value={examState.grade} onChange={(e) => setExamState({ ...examState, grade: e.target.value })}>
                             <option value="">Grado...</option>
                             {[5,6,7,8,9,10,11].map((g) => <option key={g} value={`${g}º`}>{g}º Prim/Sec</option>)}
                           </select>
                         </div>
                         <div className="group">
-                          <label className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400 mb-2 block pl-1">Periodo</label>
-                          <select className="w-full rounded-2xl border border-slate-200 p-4 bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-300 transition-all outline-none font-medium appearance-none cursor-pointer" value={examState.period} onChange={(e) => setExamState({ ...examState, period: e.target.value })}>
+                          <label className={`text-[11px] font-bold uppercase tracking-[0.2em] mb-2 block pl-1 ${examState.attemptedSubmit && !examState.period ? 'text-rose-500' : 'text-slate-400'}`}>Periodo (Requerido)</label>
+                          <select className={`w-full rounded-2xl border p-4 transition-all outline-none font-medium appearance-none cursor-pointer ${examState.attemptedSubmit && !examState.period ? 'border-rose-300 bg-rose-50 focus:border-rose-500 ring-4 ring-rose-100 text-rose-700' : 'border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-300'}`} value={examState.period} onChange={(e) => setExamState({ ...examState, period: e.target.value })}>
                             <option value="">Periodo...</option>
                             {[1,2,3,4].map((p) => <option key={p} value={`Período ${p}`}>{p}º Trimestre</option>)}
                           </select>
@@ -381,31 +489,8 @@ export default function App() {
                       <div className="space-y-6">
                         <div className="grid grid-cols-2 gap-4">
                           <div className="group">
-                            <label className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400 mb-2 block pl-1">Estructura</label>
-                            <select className="w-full rounded-2xl border border-slate-200 p-4 bg-slate-50/50 focus:bg-white transition-all outline-none font-medium" value={examState.questionType} onChange={(e) => setExamState({ ...examState, questionType: e.target.value as any })}>
-                              <option value="mixed">Mixto (Óptimo)</option>
-                              <option value="multiple-choice">Selección (ICFES)</option>
-                              <option value="open">Abierto (Analítico)</option>
-                            </select>
-                          </div>
-                          <div className="group">
-                            <label className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400 mb-2 block pl-1">Dificultad</label>
-                            <select className="w-full rounded-2xl border border-slate-200 p-4 bg-slate-50/50 focus:bg-white transition-all outline-none font-medium" value={examState.difficulty} onChange={(e) => setExamState({ ...examState, difficulty: e.target.value })}>
-                              <option value="Baja">Baja (Refuerzo)</option>
-                              <option value="Media">Media (Estándar)</option>
-                              <option value="Alta">Alta (Excelencia)</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="group">
-                            <label className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400 mb-2 block pl-1">Cant. Preguntas</label>
-                            <input type="number" min="1" max="25" className="w-full rounded-2xl border border-slate-200 p-4 bg-slate-50/50 focus:bg-white transition-all outline-none font-bold text-center" value={examState.numQuestions} onChange={(e) => setExamState({ ...examState, numQuestions: parseInt(e.target.value) || 1 })} />
-                          </div>
-                          <div className="group">
                             <label className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400 mb-2 block pl-1">Taxonomía Bloom</label>
-                            <select className="w-full rounded-2xl border border-slate-200 p-4 bg-slate-50/50 focus:bg-white transition-all outline-none font-medium" value={examState.taxonomyBloom} onChange={(e) => setExamState({ ...examState, taxonomyBloom: e.target.value as any })}>
+                            <select className="w-full rounded-2xl border border-slate-200 p-4 bg-slate-50/50 focus:bg-white transition-all outline-none font-medium appearance-none cursor-pointer" value={examState.taxonomyBloom} onChange={(e) => setExamState({ ...examState, taxonomyBloom: e.target.value as any })}>
                               <option value="Recordar">Recordar</option>
                               <option value="Comprender">Comprender</option>
                               <option value="Aplicar">Aplicar</option>
@@ -414,6 +499,49 @@ export default function App() {
                               <option value="Crear">Crear (Síntesis)</option>
                             </select>
                           </div>
+                          <div className="group">
+                            <label className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400 mb-2 block pl-1">Dificultad</label>
+                            <select className="w-full rounded-2xl border border-slate-200 p-4 bg-slate-50/50 focus:bg-white transition-all outline-none font-medium appearance-none cursor-pointer" value={examState.difficulty} onChange={(e) => setExamState({ ...examState, difficulty: e.target.value })}>
+                              <option value="Baja">Baja (Refuerzo)</option>
+                              <option value="Media">Media (Estándar)</option>
+                              <option value="Alta">Alta (Excelencia)</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className={`p-5 rounded-3xl border transition-all ${examState.attemptedSubmit && (examState.numQuestions !== (examState.numMultipleChoice + examState.numOpenEnded)) ? 'border-rose-300 bg-rose-50/30 ring-4 ring-rose-50' : 'border-slate-100 bg-slate-50/50'}`}>
+                          <div className="group mb-5">
+                            <label className={`text-[11px] font-bold uppercase tracking-[0.2em] mb-2 block pl-1 ${examState.attemptedSubmit && (examState.numQuestions !== (examState.numMultipleChoice + examState.numOpenEnded)) ? 'text-rose-500' : 'text-slate-900'}`}>Total Preguntas (Requerido)</label>
+                            <input type="number" min="1" max="25" className={`w-full rounded-2xl border p-4 bg-white transition-all outline-none font-black text-center text-lg ${examState.attemptedSubmit && (examState.numQuestions !== (examState.numMultipleChoice + examState.numOpenEnded)) ? 'border-rose-300 focus:border-rose-500 text-rose-700' : 'border-slate-200 focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100'}`} value={examState.numQuestions} onChange={(e) => setExamState({ ...examState, numQuestions: parseInt(e.target.value) || 1, numMultipleChoice: parseInt(e.target.value) || 1, numOpenEnded: 0 })} />
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="group">
+                              <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-2 block pl-1">Múltiple</label>
+                              <input type="number" min="0" max={examState.numQuestions} className="w-full rounded-2xl border border-slate-200 p-3 bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-300 transition-all outline-none font-bold text-center" value={examState.numMultipleChoice} onChange={(e) => {
+                                const val = parseInt(e.target.value) || 0;
+                                setExamState(prev => ({ 
+                                  ...prev, 
+                                  numMultipleChoice: val > prev.numQuestions ? prev.numQuestions : val,
+                                  numOpenEnded: prev.numQuestions - (val > prev.numQuestions ? prev.numQuestions : val)
+                                }));
+                              }} />
+                            </div>
+                            <div className="group">
+                              <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-2 block pl-1">Abiertas</label>
+                              <input type="number" min="0" max={examState.numQuestions} className="w-full rounded-2xl border border-slate-200 p-3 bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-300 transition-all outline-none font-bold text-center" value={examState.numOpenEnded} onChange={(e) => {
+                                const val = parseInt(e.target.value) || 0;
+                                setExamState(prev => ({ 
+                                  ...prev, 
+                                  numOpenEnded: val > prev.numQuestions ? prev.numQuestions : val,
+                                  numMultipleChoice: prev.numQuestions - (val > prev.numQuestions ? prev.numQuestions : val)
+                                }));
+                              }} />
+                            </div>
+                          </div>
+                          {examState.attemptedSubmit && (examState.numQuestions !== (examState.numMultipleChoice + examState.numOpenEnded)) && (
+                            <p className="text-xs font-bold text-rose-500 text-center mt-4">⚠️ La suma debe ser exactamente {examState.numQuestions}</p>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -467,13 +595,13 @@ export default function App() {
                       </div>
                       <div>
                         <h2 className="text-2xl font-black text-slate-900">Núcleo Temático Principal</h2>
-                        <p className="text-sm text-slate-500 font-medium tracking-tight italic">Especifique el tema, competencia o DBA a evaluar</p>
+                        <p className={`text-sm font-medium tracking-tight italic ${examState.attemptedSubmit && !examState.topic ? 'text-rose-500' : 'text-slate-500'}`}>Especifique el tema, competencia o DBA a evaluar (Requerido)</p>
                       </div>
                     </div>
 
                     <div className="relative">
                       <textarea 
-                        className="w-full rounded-2xl border border-slate-200 p-6 bg-slate-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-300 transition-all outline-none min-h-[160px] text-lg font-serif leading-relaxed placeholder:text-slate-300" 
+                        className={`w-full rounded-2xl border p-6 transition-all outline-none min-h-[160px] text-lg font-serif leading-relaxed ${examState.attemptedSubmit && !examState.topic ? 'border-rose-300 bg-rose-50 focus:border-rose-500 ring-4 ring-rose-100 placeholder:text-rose-300' : 'border-slate-200 bg-slate-50/30 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-300 placeholder:text-slate-300'}`} 
                         placeholder="Ej: Análisis de la biodiversidad en ecosistemas tropicales y su relación con el desarrollo sostenible..." 
                         value={examState.topic} 
                         onChange={(e) => setExamState({ ...examState, topic: e.target.value })} 
@@ -521,19 +649,74 @@ export default function App() {
                     <h2 className="text-4xl font-serif font-black text-slate-900 leading-tight">
                       {examState.generationMode === 'taller' ? 'Guía de Refuerzo Diseñada' : 'Diseño Evaluativo Generado'}
                     </h2>
-                    <p className="text-indigo-600 mt-2 font-bold flex items-center gap-2 italic">
-                      <Layers size={18} /> {examState.examData.questions.length} {examState.generationMode === 'taller' ? 'Actividades de Nivelación' : 'Reactivos Académicos'}
-                    </p>
+                    <div className="flex items-center gap-4 mt-3 flex-wrap">
+                      <p className="text-indigo-600 font-bold flex items-center gap-2 italic text-sm">
+                        <Layers size={18} /> {examState.examData.questions.length} {examState.generationMode === 'taller' ? 'Actividades' : 'Reactivos'}
+                      </p>
+                      {examState.examData.estimatedTimeMinutes && (
+                        <>
+                          <span className="hidden sm:block w-1.5 h-1.5 bg-slate-200 rounded-full"></span>
+                          <p className="text-slate-500 font-bold flex items-center gap-2 italic text-sm">
+                            <Clock size={18} className="text-amber-500" /> {examState.examData.estimatedTimeMinutes} min
+                          </p>
+                        </>
+                      )}
+                      {examState.examData.dbaCoveragePercentage && (
+                         <>
+                           <span className="hidden sm:block w-1.5 h-1.5 bg-slate-200 rounded-full"></span>
+                           <div className="flex items-center gap-2 group/dba relative cursor-help">
+                             <div className="flex items-center gap-1.5 bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-xs font-black">
+                               <Target size={14} /> {examState.examData.dbaCoveragePercentage}% Cobertura DBA
+                             </div>
+                             <div className="absolute top-full mt-2 left-0 sm:left-1/2 sm:-translate-x-1/2 w-64 bg-slate-800 text-white text-xs p-3 rounded-xl opacity-0 group-hover/dba:opacity-100 transition-opacity pointer-events-none z-10 shadow-xl">
+                               {examState.examData.dbaCoverageExplanation}
+                             </div>
+                           </div>
+                         </>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-3">
-                    <button className="flex items-center gap-3 rounded-[1.25rem] bg-slate-50 px-6 py-4 text-slate-700 font-bold hover:bg-white hover:shadow-lg transition-all border border-slate-100" onClick={() => downloadPDF(false)}>
-                      <Download size={20} className="text-indigo-500" /> {examState.generationMode === 'taller' ? 'Guía Estudiante' : 'Versión Estudiante'}
-                    </button>
-                    <button className="flex items-center gap-3 rounded-[1.25rem] bg-slate-900 px-6 py-4 text-white font-bold hover:bg-black hover:shadow-2xl hover:shadow-indigo-500/20 transition-all" onClick={() => downloadPDF(true)}>
-                      <Download size={20} className="text-indigo-300" /> Master {examState.generationMode === 'taller' ? 'Guía' : 'Clave'}
-                    </button>
+                  <div className="flex flex-col gap-3 w-full md:w-auto">
+                    <div className="flex gap-2">
+                       <button className="flex-1 md:flex-none justify-center items-center gap-2 rounded-xl bg-indigo-50 px-4 py-3 text-indigo-700 font-bold hover:bg-indigo-100 transition-all border border-indigo-100 text-sm flex" onClick={() => downloadPDF(false, 'A')}>
+                         <Download size={16} /> Est. A
+                       </button>
+                       <button className="flex-1 md:flex-none justify-center items-center gap-2 rounded-xl bg-indigo-50 px-4 py-3 text-indigo-700 font-bold hover:bg-indigo-100 transition-all border border-indigo-100 text-sm flex" onClick={() => downloadPDF(false, 'B')}>
+                         <Download size={16} /> Est. B
+                       </button>
+                    </div>
+                    <div className="flex gap-2">
+                       <button className="flex-1 md:flex-none justify-center items-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-white font-bold hover:bg-black transition-all text-sm flex" onClick={() => downloadPDF(true, 'A')}>
+                         <Download size={16} className="text-indigo-300" /> Clave A
+                       </button>
+                       <button className="flex-1 md:flex-none justify-center items-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-white font-bold hover:bg-black transition-all text-sm flex" onClick={() => downloadPDF(true, 'B')}>
+                         <Download size={16} className="text-indigo-300" /> Clave B
+                       </button>
+                       <button className="flex items-center justify-center gap-2 rounded-xl bg-white px-3 py-3 text-slate-600 font-bold hover:bg-slate-50 hover:text-indigo-600 transition-all border border-slate-200 shadow-sm text-sm" title="Copiar Texto" onClick={copyToClipboard}>
+                         {copied ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
+                       </button>
+                    </div>
                   </div>
                 </div>
+
+                {examState.examData.globalRubric && (
+                  <motion.section 
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="bg-white rounded-[2.5rem] border border-slate-100 p-8 sm:p-10 shadow-xl shadow-slate-200 border-l-[12px] border-l-rose-500"
+                  >
+                    <div className="flex items-center gap-4 mb-6">
+                      <div className="p-3 bg-rose-50 rounded-2xl text-rose-600">
+                        <Target size={24} />
+                      </div>
+                      <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight">Rúbrica Global de Evaluación</h2>
+                    </div>
+                    <div className="prose prose-slate max-w-none text-slate-700 bg-slate-50/50 p-6 rounded-[1.5rem] border border-slate-100/50 prose-tables:border-collapse prose-td:border prose-td:border-slate-200 prose-td:p-3 prose-th:border prose-th:border-slate-200 prose-th:p-3 prose-th:bg-slate-100 text-sm">
+                      <Markdown>{examState.examData.globalRubric}</Markdown>
+                    </div>
+                  </motion.section>
+                )}
 
                 {examState.generationMode === 'taller' && examState.examData.theoreticalSummary && (
                   <motion.section 
@@ -646,6 +829,19 @@ export default function App() {
                             </div>
                           ))}
                         </aside>
+
+                        {q.rubrica_evaluacion && (
+                          <div className="lg:col-span-12 mt-2 pt-6 border-t border-slate-100 border-dashed">
+                            <div className="bg-amber-50/50 rounded-[1.5rem] p-6 border border-amber-100/50">
+                              <p className="text-[10px] font-black uppercase text-amber-700 tracking-widest mb-3 flex items-center gap-2">
+                                <Target size={14} /> Rúbrica Integradora Sugerida
+                              </p>
+                              <p className="font-medium text-amber-900 leading-relaxed text-sm">
+                                {q.rubrica_evaluacion}
+                              </p>
+                            </div>
+                          </div>
+                        )}
                       </footer>
                     </motion.div>
                   ))}
@@ -707,6 +903,68 @@ export default function App() {
                 </button>
               </div>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showHistory && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-end z-[100] p-0"
+            onClick={() => setShowHistory(false)}
+          >
+            <motion.aside 
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              className="bg-white w-full max-w-md h-full shadow-2xl flex flex-col pt-8 pb-6 px-6 relative"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-center mb-6 pb-6 border-b border-slate-100">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-indigo-50 rounded-2xl text-indigo-600"><History size={24} /></div>
+                  <h3 className="font-serif font-black text-2xl text-slate-900">Historial Local</h3>
+                </div>
+                <button onClick={() => setShowHistory(false)} className="text-slate-400 hover:text-slate-900 bg-slate-50 p-2 rounded-full transition"><X size={24}/></button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+                {savedExams.length === 0 ? (
+                  <div className="text-center text-slate-400 mt-10">
+                    <History size={48} className="mx-auto text-slate-200 mb-4" />
+                    <p className="font-bold">No hay evaluaciones guardadas</p>
+                    <p className="text-sm mt-2">Los exámenes que generes se guardarán auto-mágicamente aquí.</p>
+                  </div>
+                ) : (
+                  savedExams.map((entry) => (
+                    <div key={entry.id} className="bg-slate-50 border border-slate-100 p-5 rounded-[1.5rem] hover:border-indigo-300 hover:shadow-lg transition-all group cursor-pointer" onClick={() => {
+                      setExamState({
+                        ...examState,
+                        ...entry.config,
+                        examData: entry.examData,
+                        examGenerated: true,
+                        loading: false
+                      });
+                      setShowHistory(false);
+                    }}>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500 mb-2">
+                        {new Date(entry.date).toLocaleDateString()} • {new Date(entry.date).toLocaleTimeString()}
+                      </p>
+                      <h4 className="font-bold text-slate-800 line-clamp-1 mb-1">{entry.examData.examTitle || 'Evaluación Generada'}</h4>
+                      <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">{entry.config.topic}</p>
+                      <div className="mt-4 flex gap-2">
+                        <span className="bg-white border border-slate-200 px-3 py-1 rounded-lg text-[10px] font-bold text-slate-500">{entry.config.grade}</span>
+                        <span className="bg-white border border-slate-200 px-3 py-1 rounded-lg text-[10px] font-bold text-slate-500">{entry.config.subject}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.aside>
           </motion.div>
         )}
       </AnimatePresence>

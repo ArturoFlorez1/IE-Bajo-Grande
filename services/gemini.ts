@@ -25,7 +25,8 @@ export async function generateExam(
   topic: string,
   numQuestions: number,
   teacherName: string,
-  questionType: 'multiple-choice' | 'open' | 'mixed',
+  numMultipleChoice: number,
+  numOpenEnded: number,
   grade: string,
   period: string,
   difficulty: string,
@@ -48,7 +49,7 @@ export async function generateExam(
       - Docente: ${teacherName}
       - Nivel de Dificultad: ${difficulty}
       - Enfoque Taxonómico (Bloom): ${taxonomyBloom}
-      - Tipo de Estructura: ${questionType}
+      - Distribución de Preguntas: ${numMultipleChoice} de selección múltiple (única respuesta) y ${numOpenEnded} abiertas (desarrollo).
 
       ${sourceMaterial ? `MATERIAL DE REFERENCIA (EXTRAÍDO DE PDF):
       """
@@ -57,26 +58,34 @@ export async function generateExam(
       Usa este material como base empírica para el contenido.` : ''}
 
       DIRECTRICES DE CALIDAD:
-      1. EXACTAMENTE ${numQuestions} ${isWorkshop ? 'EJERCICIOS/PREGUNTAS' : 'PREGUNTAS'}.
+      1. EXACTAMENTE ${numQuestions} ${isWorkshop ? 'EJERCICIOS/PREGUNTAS' : 'PREGUNTAS'} en total (${numMultipleChoice} de opción múltiple, ${numOpenEnded} abiertas).
       2. Alineación con Derechos Básicos de Aprendizaje (DBA) y Matrices de Referencia del ICFES.
       ${isWorkshop ? '3. Incluye una sección de "FUNDAMENTACIÓN TEÓRICA" (theoreticalSummary) que explique los conceptos clave de forma clara y didáctica (mínimo 3 párrafos).' : '3. Lenguaje académico, profesional y preciso.'}
       4. Si es selección múltiple, las opciones deben ser plausibles.
       5. El 'texto_base' debe ser un estímulo rico.
       ${isWorkshop ? '6. Enfoque del taller: Refuerzo, nivelación y aplicación práctica paso a paso.' : ''}
+      7. (Adicional) Calcula un tiempo estimado realista para completar la prueba/taller (estimatedTimeMinutes).
+      8. (Adicional) Proporciona una 'rubrica_evaluacion' específica para calificar cada pregunta (muy útil para preguntas abiertas o de desarrollo).
+      9. ¡NUEVO! Diseñador de Rúbricas: Crea una "rúbrica global de evaluación" (globalRubric) en formato Markdown estructurada en niveles (Bajo, Básico, Alto, Superior) para calificar todo el instrumento.
+      10. ¡NUEVO! Analizador de Cobertura DBA: Analiza qué porcentaje aproximado del estándar se cubre en este instrumento y devuelve 'dbaCoveragePercentage' (0-100) y 'dbaCoverageExplanation' (Breve diagnóstico de 1-2 oraciones).
     `;
 
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: prompt,
       config: {
-        systemInstruction: `Eres un experto pedagógico. Tu tarea es generar un ${isWorkshop ? 'taller' : 'examen'} de EXACTAMENTE ${numQuestions} reactivos. El formato de salida debe ser JSON estricto.`,
+        systemInstruction: `Eres un experto pedagógico. Tu tarea es generar un ${isWorkshop ? 'taller' : 'examen'} de EXACTAMENTE ${numQuestions} reactivos con rúbricas de evaluación y tiempo estimado. El formato de salida debe ser JSON estricto.`,
         responseMimeType: "application/json",
         responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            examTitle: { type: Type.STRING },
-            theoreticalSummary: { type: Type.STRING, description: "Solo para talleres: Resumen pedagógico del tema." },
-            questions: {
+           type: Type.OBJECT,
+           properties: {
+             examTitle: { type: Type.STRING },
+             estimatedTimeMinutes: { type: Type.INTEGER, description: "Tiempo estimado en minutos para resolver todo el recurso" },
+             theoreticalSummary: { type: Type.STRING, description: "Solo para talleres: Resumen pedagógico del tema." },
+             globalRubric: { type: Type.STRING, description: "Rúbrica general en Markdown para la prueba." },
+             dbaCoveragePercentage: { type: Type.INTEGER, description: "Porcentaje de cobertura de los DBA (0-100)" },
+             dbaCoverageExplanation: { type: Type.STRING, description: "Justificación de la cobertura." },
+             questions: {
               type: Type.ARRAY,
               items: {
                 type: Type.OBJECT,
@@ -103,13 +112,14 @@ export async function generateExam(
                     }
                   },
                   respuesta_correcta: { type: Type.STRING },
-                  explicacion: { type: Type.STRING }
+                  explicacion: { type: Type.STRING },
+                  rubrica_evaluacion: { type: Type.STRING, description: "Criterio de puntuación o rúbrica breve" }
                 },
-                required: ["pregunta", "respuesta_correcta", "explicacion"]
+                required: ["pregunta", "respuesta_correcta", "explicacion", "rubrica_evaluacion"]
               }
             }
           },
-          required: ["examTitle", "questions"]
+          required: ["examTitle", "estimatedTimeMinutes", "globalRubric", "dbaCoveragePercentage", "dbaCoverageExplanation", "questions"]
         }
       }
     });

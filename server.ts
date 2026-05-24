@@ -12,8 +12,8 @@ async function startServer() {
   // API routes
   app.post("/api/generate-exam", async (req, res) => {
     try {
-      const { subject, topic, numQuestions, teacherName, questionType, grade, period, difficulty, taxonomyBloom, generationMode, sourceMaterial } = req.body;
-      const data = await generateExam(subject, topic, numQuestions, teacherName, questionType, grade, period, difficulty, taxonomyBloom, generationMode, sourceMaterial);
+      const { subject, topic, numQuestions, teacherName, numMultipleChoice, numOpenEnded, grade, period, difficulty, taxonomyBloom, generationMode, sourceMaterial } = req.body;
+      const data = await generateExam(subject, topic, numQuestions, teacherName, numMultipleChoice, numOpenEnded, grade, period, difficulty, taxonomyBloom, generationMode, sourceMaterial);
       res.json(data);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
