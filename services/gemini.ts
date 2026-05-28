@@ -4,23 +4,8 @@
  */
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Use the system-injected GEMINI_API_KEY
-const apiKey = process.env.GEMINI_API_KEY;
-
-if (!apiKey) {
-  console.error("Gemini API key missing. Ensure GEMINI_API_KEY is set in your environment.");
-}
-
-const ai = new GoogleGenAI({ 
-  apiKey: apiKey || "",
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    }
-  }
-});
-
 export async function generateExam(
+  apiKey: string,
   subject: string,
   topic: string,
   numQuestions: number,
@@ -34,6 +19,19 @@ export async function generateExam(
   generationMode: 'evaluacion' | 'taller' = 'evaluacion',
   sourceMaterial?: string
 ) {
+  if (!apiKey) {
+    throw new Error("Gemini API key missing. Please provide your API key in the platform settings.");
+  }
+
+  const ai = new GoogleGenAI({ 
+    apiKey: apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  });
+
   try {
     const isWorkshop = generationMode === 'taller';
     
@@ -146,9 +144,23 @@ export async function generateExam(
 }
 
 export async function editQuestion(
+  apiKey: string,
   question: any,
   instruction: string
 ) {
+  if (!apiKey) {
+    throw new Error("Gemini API key missing. Please provide your API key in the platform settings.");
+  }
+
+  const ai = new GoogleGenAI({ 
+    apiKey: apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  });
+
   try {
     const prompt = `
       Eres un asistente pedagógico experto. Tienes la pregunta original (en formato JSON): 

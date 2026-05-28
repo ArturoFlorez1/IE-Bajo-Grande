@@ -13,18 +13,26 @@ import AcademicGuide from './components/AcademicGuide';
 // Client-side API wrappers
 const api = {
   generateExam: async (payload: any) => {
+    const apiKey = localStorage.getItem('school_gemini_api_key') || '';
     const res = await fetch('/api/generate-exam', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-gemini-api-key': apiKey 
+      },
       body: JSON.stringify(payload)
     });
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   },
   editQuestion: async (payload: any) => {
+    const apiKey = localStorage.getItem('school_gemini_api_key') || '';
     const res = await fetch('/api/edit-question', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-gemini-api-key': apiKey
+      },
       body: JSON.stringify(payload)
     });
     if (!res.ok) throw new Error(await res.text());
@@ -96,6 +104,9 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+
   useEffect(() => {
     const loaded = localStorage.getItem('school_exam_history');
     if (loaded) {
@@ -105,7 +116,18 @@ export default function App() {
         console.error("Failed to load history", e);
       }
     }
+    const loadedKey = localStorage.getItem('school_gemini_api_key');
+    if (loadedKey) {
+      setApiKeyInput(loadedKey);
+    } else {
+      setShowApiKeyModal(true);
+    }
   }, []);
+
+  const saveApiKey = () => {
+    localStorage.setItem('school_gemini_api_key', apiKeyInput);
+    setShowApiKeyModal(false);
+  };
 
   const saveToHistory = (examData: any, config: any) => {
     const newEntry = {
@@ -153,6 +175,10 @@ export default function App() {
   };
 
   const handleGenerate = async () => {
+    if (!localStorage.getItem('school_gemini_api_key')) {
+      setShowApiKeyModal(true);
+      return;
+    }
     setExamState(prev => ({ ...prev, attemptedSubmit: true }));
     if (!examState.subject || !examState.topic || !examState.grade || !examState.teacherName || !examState.period) {
       setExamState(prev => ({ ...prev, error: 'Por favor complete todos los campos obligatorios.' }));
@@ -182,6 +208,10 @@ export default function App() {
 
   const handleEditQuestion = async () => {
     if (!editingQuestion || !editInstruction) return;
+    if (!localStorage.getItem('school_gemini_api_key')) {
+      setShowApiKeyModal(true);
+      return;
+    }
     setIsEditing(true);
     try {
       const updatedQuestion = await api.editQuestion({
@@ -386,10 +416,13 @@ export default function App() {
           </p>
           <span className="h-px w-16 bg-slate-200"></span>
         </div>
-        <div className="absolute right-0 top-1/2 -translate-y-1/2 cursor-pointer group" onClick={() => setShowHistory(true)}>
-          <div className="bg-white px-5 py-3 rounded-full shadow-lg shadow-indigo-100 border border-slate-100 flex items-center gap-3 hover:border-indigo-300 hover:shadow-indigo-200 transition-all">
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-3">
+          <div className="cursor-pointer group bg-white px-5 py-3 rounded-full shadow-lg shadow-indigo-100 border border-slate-100 flex items-center gap-3 hover:border-indigo-300 hover:shadow-indigo-200 transition-all" onClick={() => setShowHistory(true)}>
             <History size={20} className="text-indigo-500 group-hover:-rotate-45 transition-transform" />
-            <span className="text-xs font-black uppercase text-slate-600 tracking-wider">Historial ({savedExams.length})</span>
+            <span className="hidden sm:inline text-xs font-black uppercase text-slate-600 tracking-wider">Historial ({savedExams.length})</span>
+          </div>
+          <div className="cursor-pointer group bg-white p-3 rounded-full shadow-lg shadow-amber-100 border border-slate-100 flex items-center gap-3 hover:border-amber-300 hover:shadow-amber-200 transition-all" onClick={() => setShowApiKeyModal(true)}>
+            <Settings2 size={20} className="text-amber-500 group-hover:rotate-90 transition-transform" />
           </div>
         </div>
       </header>
@@ -900,6 +933,65 @@ export default function App() {
                       Rediseñando Pregunta...
                     </span>
                   ) : 'Actualizar Pregunta Académica'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showApiKeyModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4"
+            onClick={() => localStorage.getItem('school_gemini_api_key') && setShowApiKeyModal(false)}
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white rounded-[2rem] w-full max-w-lg p-8 shadow-2xl relative"
+              onClick={e => e.stopPropagation()}
+            >
+              {localStorage.getItem('school_gemini_api_key') && (
+                <button onClick={() => setShowApiKeyModal(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-900 bg-slate-50 p-2 rounded-full transition"><X size={24}/></button>
+              )}
+              
+              <div className="flex items-center gap-4 mb-6">
+                <div className="p-3 bg-amber-50 rounded-2xl text-amber-600"><Settings2 size={28} /></div>
+                <div>
+                  <h3 className="font-serif font-black text-2xl text-slate-900">Configuración de API</h3>
+                  <p className="text-sm font-medium text-slate-500">Conecta la plataforma con Inteligencia Artificial</p>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <div className="p-5 bg-amber-50 rounded-[1.5rem] border border-amber-100 flex gap-3">
+                  <Info className="text-amber-500 shrink-0 mt-0.5" size={20} />
+                  <p className="text-sm font-medium text-amber-800 leading-relaxed">Para poder generar evaluaciones, esta plataforma requiere una clave API de Google Gemini (Gemini API Key). Tu clave se guarda de manera segura y local en tu navegador.</p>
+                </div>
+                
+                <div className="group">
+                  <label className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-2 block pl-1">API Key de Gemini</label>
+                  <input 
+                    type="password" 
+                    className="w-full rounded-2xl border border-slate-200 p-4 font-mono focus:bg-white focus:ring-4 focus:ring-amber-100 focus:border-amber-300 transition-all outline-none bg-slate-50 relative z-10" 
+                    placeholder="AIzaSy..." 
+                    value={apiKeyInput}
+                    onChange={(e) => setApiKeyInput(e.target.value)}
+                  />
+                  <p className="text-xs text-slate-400 mt-2 font-medium px-2">Puedes obtenerla gratis en <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-amber-600 hover:underline">Google AI Studio</a>.</p>
+                </div>
+
+                <button 
+                  className="w-full bg-slate-900 text-white p-5 rounded-[1.5rem] font-bold hover:bg-black hover:shadow-xl hover:shadow-slate-300 transition-all disabled:opacity-50"
+                  onClick={saveApiKey}
+                  disabled={!apiKeyInput.trim()}
+                >
+                  Guardar Clave y Continuar
                 </button>
               </div>
             </motion.div>
