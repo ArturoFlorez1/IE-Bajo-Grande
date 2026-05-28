@@ -22,8 +22,17 @@ const api = {
       },
       body: JSON.stringify(payload)
     });
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
+    if (!res.ok) {
+      let msg = await res.text();
+      try { msg = JSON.parse(msg).error || msg; } catch {}
+      throw new Error(msg);
+    }
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      throw new Error("El servidor devolvió una respuesta inválida. Si esto ocurre en Vercel, asegúrese de que el proyecto haya terminado de compilarse con los últimos cambios de vercel.json.");
+    }
   },
   editQuestion: async (payload: any) => {
     const apiKey = localStorage.getItem('school_gemini_api_key') || '';
@@ -35,8 +44,17 @@ const api = {
       },
       body: JSON.stringify(payload)
     });
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
+    if (!res.ok) {
+      let msg = await res.text();
+      try { msg = JSON.parse(msg).error || msg; } catch {}
+      throw new Error(msg);
+    }
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      throw new Error("El servidor devolvió una respuesta inválida.");
+    }
   }
 };
 
@@ -198,7 +216,7 @@ export default function App() {
       saveToHistory(data, examState);
     } catch (error: any) {
       console.error(error);
-      let errorMsg = 'Hubo un error al generar el examen. Por favor, intenta de nuevo.';
+      let errorMsg = error.message || 'Hubo un error al generar el examen. Por favor, intenta de nuevo.';
       if (error.message?.includes('429') || error.message?.includes('quota')) {
         errorMsg = 'Se ha agotado la cuota de la API (Error 429). Por favor, intenta de nuevo en unos minutos.';
       }
