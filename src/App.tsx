@@ -9,52 +9,33 @@ import * as pdfjs from 'pdfjs-dist';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import AcademicGuide from './components/AcademicGuide';
+import { generateExam, editQuestion } from './services/gemini';
 
 // Client-side API wrappers
 const api = {
   generateExam: async (payload: any) => {
     const apiKey = localStorage.getItem('school_gemini_api_key') || '';
-    const res = await fetch('/api/generate-exam', {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'x-gemini-api-key': apiKey 
-      },
-      body: JSON.stringify(payload)
-    });
-    if (!res.ok) {
-      let msg = await res.text();
-      try { msg = JSON.parse(msg).error || msg; } catch {}
-      throw new Error(msg);
-    }
-    const text = await res.text();
-    try {
-      return JSON.parse(text);
-    } catch (e) {
-      throw new Error("El servidor devolvió una respuesta inválida. Si esto ocurre en Vercel, asegúrese de que el proyecto haya terminado de compilarse con los últimos cambios de vercel.json.");
-    }
+    if (!apiKey) throw new Error("API key is missing.");
+    return generateExam(
+      apiKey,
+      payload.subject,
+      payload.topic,
+      payload.numQuestions,
+      payload.teacherName,
+      payload.numMultipleChoice,
+      payload.numOpenEnded,
+      payload.grade,
+      payload.period,
+      payload.difficulty,
+      payload.taxonomyBloom,
+      payload.generationMode,
+      payload.sourceMaterial
+    );
   },
   editQuestion: async (payload: any) => {
     const apiKey = localStorage.getItem('school_gemini_api_key') || '';
-    const res = await fetch('/api/edit-question', {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'x-gemini-api-key': apiKey
-      },
-      body: JSON.stringify(payload)
-    });
-    if (!res.ok) {
-      let msg = await res.text();
-      try { msg = JSON.parse(msg).error || msg; } catch {}
-      throw new Error(msg);
-    }
-    const text = await res.text();
-    try {
-      return JSON.parse(text);
-    } catch (e) {
-      throw new Error("El servidor devolvió una respuesta inválida.");
-    }
+    if (!apiKey) throw new Error("API key is missing.");
+    return editQuestion(apiKey, payload.question, payload.instruction);
   }
 };
 
@@ -508,14 +489,14 @@ export default function App() {
                           <label className={`text-[11px] font-bold uppercase tracking-[0.2em] mb-2 block pl-1 ${examState.attemptedSubmit && !examState.grade ? 'text-rose-500' : 'text-slate-400'}`}>Grado (Requerido)</label>
                           <select className={`w-full rounded-2xl border p-4 transition-all outline-none font-medium appearance-none cursor-pointer ${examState.attemptedSubmit && !examState.grade ? 'border-rose-300 bg-rose-50 focus:border-rose-500 ring-4 ring-rose-100 text-rose-700' : 'border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-300'}`} value={examState.grade} onChange={(e) => setExamState({ ...examState, grade: e.target.value })}>
                             <option value="">Grado...</option>
-                            {[5,6,7,8,9,10,11].map((g) => <option key={g} value={`${g}º`}>{g}º Prim/Sec</option>)}
+                            {[6,7,8,9,10,11].map((g) => <option key={g} value={`${g}º`}>{g}º</option>)}
                           </select>
                         </div>
                         <div className="group">
                           <label className={`text-[11px] font-bold uppercase tracking-[0.2em] mb-2 block pl-1 ${examState.attemptedSubmit && !examState.period ? 'text-rose-500' : 'text-slate-400'}`}>Periodo (Requerido)</label>
                           <select className={`w-full rounded-2xl border p-4 transition-all outline-none font-medium appearance-none cursor-pointer ${examState.attemptedSubmit && !examState.period ? 'border-rose-300 bg-rose-50 focus:border-rose-500 ring-4 ring-rose-100 text-rose-700' : 'border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-indigo-100 focus:border-indigo-300'}`} value={examState.period} onChange={(e) => setExamState({ ...examState, period: e.target.value })}>
                             <option value="">Periodo...</option>
-                            {[1,2,3,4].map((p) => <option key={p} value={`Período ${p}`}>{p}º Trimestre</option>)}
+                            {[1,2,3,4].map((p) => <option key={p} value={`Período ${p}`}>{p}º Periodo</option>)}
                           </select>
                         </div>
                       </div>
